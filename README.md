@@ -49,19 +49,15 @@ http://localhost:8080/add?image=\Path\to\your\image.jpg
 Once you have a database built you can search it using:
 
 ```
-http://localhost:8080/search?image=\Path\to\your\image.jpg&limit=10
+http://localhost:8080/search?image=\Path\to\your\image.jpg&limit=10&compare=basic&compare=sift
 ```
 
-*The limit parameter sets the max number of results*
+**GET Parameters:**
 
-### Get Stats
+    limit=10        | This allows you to limit the number of results returned
+    compare=basic   | These are optional comparators which can to used to enhance the results  
 
-Get information about how many images are in the database.
-
-```
-http://localhost:8080/stats
-```
-
+**Returns Example:** 
 ```json
 {
     "results": [
@@ -76,3 +72,40 @@ http://localhost:8080/stats
     ]
 }
 ```
+
+### Get Stats
+
+Get information about how many images are in the database.
+
+```
+http://localhost:8080/stats
+```
+
+# GPU
+
+If you have a GPU with Cuda but code is still running on the CPU make sure you install the cuda version of torch:
+
+```
+ pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+
+You can run the `test_cuda.py` script to see if Cuda is being correctly detected:
+
+```
+python test_cuda.py
+```
+
+*Note that it is significantly faster to run this on a GPU (ie 10-50 times faster)*
+
+# Comparators
+
+I created some comparator functions which take the CNN returns and then compare each image to the search image.  I have found the `sift` comparator to be especially good.
+
+| Comparator   | Returns                                                |
+|--------------|--------------------------------------------------------|
+| basic        | 1 = identical, -1 = completely different               |
+| sift         | Returns 0 to big number (big number is best)           |
+| ssim         | 1 = identical, -1 = completely different               |
+| histogram    | 1 = identical, 0 = no match                            |
+| orb          | Returns 0 to 1, Lower is better (0 = identical images) |
+ 

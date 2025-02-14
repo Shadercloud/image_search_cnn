@@ -12,6 +12,7 @@ class ClipExtractor:
 
         # Use GPU if available
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Using device: {self.device}")
         self.model.to(self.device)
         self.model.eval()  # Set to evaluation mode
 

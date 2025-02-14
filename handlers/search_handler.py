@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from providers.compare import Compare
+
+
 class SearchHandler:
     def __init__(self, request, feature_extractor, database):
         self.request = request
@@ -14,6 +17,10 @@ class SearchHandler:
         if "limit" in query_params:
             limit = int(query_params["limit"][0])
 
+        compare_opts = None
+        if "compare" in query_params:
+            compare_opts = query_params["compare"]
+
         image_value = query_params["image"][0]
         p = Path(image_value)
 
@@ -22,5 +29,13 @@ class SearchHandler:
 
         features = self.feature_extractor.extract(p.resolve())
         results = self.database.query(features, limit)
+        if compare_opts:
+            comp = Compare(p.resolve())
+            for result in results:
+                comp.set(result['image'])
+                result['compare'] = {}
+                for c in compare_opts:
+                    if hasattr(comp, c) and callable(getattr(comp, c)):
+                        result['compare'][c] = str(getattr(comp, c)())
 
         return self.request.json({"results": results})

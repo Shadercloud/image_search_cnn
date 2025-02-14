@@ -16,6 +16,11 @@ from handlers.search_handler import SearchHandler
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Run the feature extraction web server.")
 parser.add_argument("--extractor",default="clip", type=str, choices=["clip", "resnet"], required=False, help="Choose which feature extractor to use (clip or resnet)")
+parser.add_argument(
+    "--safe",
+    action="store_true",
+    help="Write the data to the database file after every image file"
+)
 args = parser.parse_args()
 
 # Dynamically import the chosen extractor
@@ -29,7 +34,7 @@ feature_extractor = FeatureExtractor()
 # Initialize the database
 database = Database(Path(__file__).parent.resolve() / "data" / f"{args.extractor}.pickle")
 database.load()
-database.save_after_every_addition = True
+database.save_after_every_addition = args.safe
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def json(self, data):
