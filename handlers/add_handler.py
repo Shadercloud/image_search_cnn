@@ -1,4 +1,3 @@
-import random
 from pathlib import Path
 
 class AddHandler:
@@ -22,15 +21,24 @@ class AddHandler:
         elif not p.exists():
             return self.request.json({"error": f"File does not exist: {image_value}"})
 
-        num_files = min(500, len(files))
-        random_files = random.sample(files, num_files)
+        max_files = 1000000
+        if "limit" in query_params:
+            max_files = int(query_params["limit"][0])
 
-        print(f"{len(files)} files found (processing {num_files})")
+        print(f"{len(files)} files found (processing {max_files})")
 
-        for i, file in enumerate(random_files):
+        done = 0
+        for i, file in enumerate(files):
+            if self.database.exists(file):
+                print(f"Image {file} already exists")
+                continue
             features = self.feature_extractor.extract(file)
             self.database.add(features, file)
             print(f"Done Image {i}: {file}")
+            done += 1
+            if done >= max_files:
+                print(f"File Limit of {max_files} exceeded")
+                break
 
         self.database.save()
-        return self.request.json({"message": "Extracted features from images", "count": len(files)})
+        return self.request.json({"message": "Extracted features from images", "count": done})

@@ -12,7 +12,7 @@ class SearchHandler:
 
         limit = 10
         if "limit" in query_params:
-            limit = int(query_params["limit"])
+            limit = int(query_params["limit"][0])
 
         image_value = query_params["image"][0]
         p = Path(image_value)
