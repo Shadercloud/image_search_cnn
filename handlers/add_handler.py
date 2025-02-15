@@ -1,4 +1,17 @@
+import os
 from pathlib import Path
+
+def get_image_files(directory):
+    valid_extensions = {".jpg", ".jpeg", ".png"}
+    files = []
+
+    with os.scandir(directory) as entries:  # Much faster than Path.iterdir()
+        for entry in entries:
+            if entry.is_file() and Path(entry.name).suffix.lower() in valid_extensions:
+                files.append(Path(entry.path).resolve())
+
+    return files
+
 
 class AddHandler:
     def __init__(self, request, feature_extractor, database):
@@ -17,7 +30,8 @@ class AddHandler:
         if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}:
             files.append(image_value)
         elif p.is_dir():
-            files = [file.resolve() for file in p.iterdir() if file.is_file() and file.suffix.lower() in {".jpg", ".jpeg", ".png"}]
+            files = get_image_files(p)
+            #files = [file.resolve() for file in p.iterdir() if file.is_file() and file.suffix.lower() in {".jpg", ".jpeg", ".png"}]
         elif not p.exists():
             return self.request.json({"error": f"File does not exist: {image_value}"})
 
@@ -36,6 +50,9 @@ class AddHandler:
             self.database.add(features, file)
             print(f"Done Image {i}: {file}")
             done += 1
+            if self.database.save_after_additions > 0 and done % self.database.save_after_additions == 0:
+                self.database.save()
+
             if done >= max_files:
                 print(f"File Limit of {max_files} exceeded")
                 break

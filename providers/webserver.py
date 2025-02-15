@@ -1,13 +1,13 @@
 import threading
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 
 
 class WebServer(threading.Thread):
-    def __init__(self, handler):
+    def __init__(self, handler, host="localhost", port=8080):
         super().__init__()
-        self.host = "localhost"
-        self.port = 8080
-        self.ws = HTTPServer((self.host, self.port), handler)
+        self.host = host
+        self.port = port
+        self.ws = ThreadingHTTPServer((self.host, self.port), handler)
 
     def run(self):
         print(f"Server started at http://{self.host}:{self.port}")

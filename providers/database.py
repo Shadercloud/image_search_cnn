@@ -9,7 +9,7 @@ class Database:
         self.feature_matrix = None  # Precomputed feature matrix for fast querying
         self.img_paths = []  # Ordered list of image paths
         self.filename = filename
-        self.save_after_every_addition = False
+        self.save_after_additions = 1
 
     def exists(self, img_path):
         """ Check if an image already exists in the database. """
@@ -22,8 +22,6 @@ class Database:
 
         self.data[img_path] = np.array(feature_vector, dtype="float32")  # Store in dictionary
         self._update_feature_matrix()  # Update precomputed matrix
-        if self.save_after_every_addition:
-            self.save()
 
     def _update_feature_matrix(self):
         """ Recomputes the NumPy feature matrix for fast queries. """

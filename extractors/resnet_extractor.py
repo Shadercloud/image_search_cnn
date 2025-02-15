@@ -14,7 +14,11 @@ class ResNetExtractor:
         self.model.build([None, 224, 224, 3])  # Batch input shape.
 
     def extract(self, image_path):
-        img = cv2.imread(image_path)
+        if isinstance(image_path, np.ndarray):
+            img = image_path  # It's already an image, no need to load
+        else:
+            img = cv2.imread(image_path)
+
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convert to RGB
         img = cv2.resize(img, (224,224))
 
