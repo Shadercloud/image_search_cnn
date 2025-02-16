@@ -5,7 +5,7 @@ from providers.compare import Compare
 
 
 class SearchHandler:
-    def __init__(self, request, feature_extractor, database):
+    def __init__(self, program_args, request, feature_extractor, database, shutdown_event):
         self.request = request
         self.feature_extractor = feature_extractor
         self.database = database
@@ -16,7 +16,7 @@ class SearchHandler:
 
         limit = 10
         if "limit" in query_params:
-            limit = int(query_params["limit"][0])
+            limit = int(isinstance(query_params["limit"], list) and query_params["limit"][0] or query_params["limit"])
 
         compare_opts = None
         if "compare" in query_params:
@@ -45,3 +45,6 @@ class SearchHandler:
                         result['compare'][c] = str(getattr(comp, c)())
 
         return self.request.json({"results": results})
+
+    def kill(self):
+        pass

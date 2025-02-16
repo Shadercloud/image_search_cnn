@@ -1,5 +1,6 @@
 import argparse
 import importlib
+import threading
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from time import sleep
@@ -13,26 +14,31 @@ from providers.webserver import WebServer
 from handlers.add_handler import AddHandler
 from handlers.search_handler import SearchHandler
 
+shutdown_event = threading.Event()
+
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Run the feature extraction web server.")
 parser.add_argument("--extractor",default="clip", type=str, choices=["clip", "resnet"], required=False, help="Choose which feature extractor to use (clip or resnet)")
 parser.add_argument("--host",default="localhost", type=str, required=False, help="Webserver host")
 parser.add_argument("--port",default=8080, type=int, required=False, help="Webserver port")
-parser.add_argument("--save",default=1, type=int, required=False, help="Write to the database after this many new additions (0 for only write after all adds are completed)")
-args = parser.parse_args()
+parser.add_argument("--verbose", "-v", dest="verbose", default=0, type=int, required=False, help="Level of log output (0 = Not much, 1 = Info, 2 = Debug")
+parser.add_argument("--output", dest="output", default=100, type=int, required=False, help="Output the count log after processing this many images.")
+parser.add_argument("--update",dest="update_flag", action="store_true", help="Update an image if it already exists, instead of skipping it. (Default False")
+parser.add_argument("--threads", dest="threads", default=2, type=int, required=False, help="Number of threads to run during image processing.")
+params_args = parser.parse_args()
 
 # Dynamically import the chosen extractor
-extractor_module = importlib.import_module(f"extractors.{args.extractor}_extractor")
-FeatureExtractor = getattr(extractor_module, f"{args.extractor.capitalize()}Extractor")
+extractor_module = importlib.import_module(f"extractors.{params_args.extractor}_extractor")
+FeatureExtractor = getattr(extractor_module, f"{params_args.extractor.capitalize()}Extractor")
 
 
 # Initialize the selected feature extractor
 feature_extractor = FeatureExtractor()
 
 # Initialize the database
-database = Database(Path(__file__).parent.resolve() / "data" / f"{args.extractor}.pickle")
+database = Database(Path(__file__).parent.resolve() / "data" / f"{params_args.extractor}")
 database.load()
-database.save_after_additions = args.save
+
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -62,7 +68,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         handler_class = self.routes.get(parsed_url.path)
 
         if handler_class:
-            handler_class(self, feature_extractor, database).handle(query_params)
+            handler_class(params_args, self, feature_extractor, database, shutdown_event).handle(query_params)
         else:
             self.not_found()
 
@@ -81,20 +87,21 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         handler_class = self.routes.get(parsed_url.path)
 
         if handler_class:
-            handler_class(self, feature_extractor, database).handle(json_data)
+            handler_class(params_args, self, feature_extractor, database, shutdown_event).handle(json_data)
         else:
             self.not_found()
 
 if __name__ == "__main__":
-    webServer = WebServer(SimpleHTTPRequestHandler, args.host, args.port)
+    webServer = WebServer(SimpleHTTPRequestHandler, params_args.host, params_args.port)
     webServer.start()
     while True:
         try:
             sleep(1)
         except KeyboardInterrupt:
             print('Keyboard Interrupt sent.')
+            shutdown_event.set()
+            sleep(2)
             webServer.shutdown()
             print("Saving Database")
-            database.save()
             print("Exiting")
             exit(0)

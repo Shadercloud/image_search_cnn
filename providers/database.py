@@ -1,53 +1,78 @@
-import pickle
 import os
+import sqlite3
+from pathlib import Path
 
 import numpy as np
 
 class Database:
     def __init__(self, filename):
-        self.data = {}  # Dictionary: {img_path: features}
+        self.data = {}  # Dictionary: {img_file: features}
         self.feature_matrix = None  # Precomputed feature matrix for fast querying
-        self.img_paths = []  # Ordered list of image paths
-        self.filename = filename
-        self.save_after_additions = 1
+        self.features_altered = True
+        self.img_files = []  # Ordered list of image paths
+        self.filename = Path(filename).with_suffix(".sqlite")
+        self.conn = sqlite3.connect(self.filename, check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        self._create_table()
 
-    def exists(self, img_path):
+    def _create_table(self):
+        """ Creates table to store feature vectors. """
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS images (
+                img_file VARCHAR(255) PRIMARY KEY,
+                features BLOB
+            )
+        """)
+        self.conn.commit()
+
+    def exists(self, img_file):
         """ Check if an image already exists in the database. """
-        return img_path in self.data
+        return img_file in self.data
 
     def add(self, feature_vector, img_path):
+        basename = os.path.basename(img_path)
         """ Adds or updates an entry with features and associated image path. """
-        if self.exists(img_path):
-            print(f"Image '{img_path}' already exists. Updating features.")
+        feature_blob = feature_vector.tobytes()
 
-        self.data[img_path] = np.array(feature_vector, dtype="float32")  # Store in dictionary
-        self._update_feature_matrix()  # Update precomputed matrix
+        with self.conn:
+            if self.exists(basename):
+                print(f"Image '{basename}' already exists. Updating features.")
+                self.conn.execute("UPDATE images SET features = ? WHERE img_file = ?", (feature_blob, basename))
+            else:
+                self.conn.execute("INSERT INTO images (img_file, features) VALUES (?, ?)", (basename, feature_blob))
+
+        self.data[basename] = np.array(feature_vector, dtype="float32")  # Store in dictionary
+        self.features_altered = True
 
     def _update_feature_matrix(self):
+        self.features_altered = False
         """ Recomputes the NumPy feature matrix for fast queries. """
         if self.data:
             self.feature_matrix = np.vstack(list(self.data.values()))  # Stack all feature vectors
-            self.img_paths = list(self.data.keys())  # Maintain an ordered list of image paths
+            self.img_files = list(self.data.keys())  # Maintain an ordered list of image files
         else:
             self.feature_matrix = None
-            self.img_paths = []
-
-    def save(self):
-        """ Saves the database to a file. """
-        with open(self.filename, "wb") as f:
-            pickle.dump(self.data, f)
+            self.img_files = []
 
     def load(self):
-        """ Loads the database from a file and updates the feature matrix. """
-        if os.path.exists(self.filename):
-            with open(self.filename, "rb") as f:
-                self.data = pickle.load(f)
-            self._update_feature_matrix()  # Precompute feature matrix on load
-        else:
-            print("No database file found. Starting with an empty database.")
+        """ Loads all image features from the database. """
+        self.cursor.execute("SELECT COUNT(*) FROM images")
+        count = self.cursor.fetchone()[0]
+        print(f"Loading {count} images from the database.  This may take a while...")
+
+        self.cursor.execute("SELECT img_file, features FROM images")
+        for img_file, feature_blob in self.cursor.fetchall():
+            self.data[img_file] = np.frombuffer(feature_blob, dtype=np.float32)  # Convert binary back to NumPy array
+
+        self._update_feature_matrix()
+
+        print("Loading Database Completed")
 
     def query(self, query_vector, top_k=5):
         """ Finds the closest feature matches and returns (image_path, distance). """
+        if self.features_altered:
+            self._update_feature_matrix()
+
         if self.feature_matrix is None:
             print("Database is empty. No query can be performed.")
             return []
@@ -58,6 +83,9 @@ class Database:
         # Get the `top_k` closest matches
         ids = np.argsort(dists)[:top_k]
 
-        nearest_images = [{"image": str(self.img_paths[i]), "distance": float(dists[i])} for i in ids]
+        nearest_images = [{"image": str(self.img_files[i]), "distance": float(dists[i])} for i in ids]
 
         return nearest_images
+
+    def count(self):
+        return len(self.img_files)

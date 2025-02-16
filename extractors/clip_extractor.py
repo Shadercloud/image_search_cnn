@@ -22,6 +22,10 @@ class ClipExtractor:
             img = image_path  # It's already an image, no need to load
         else:
             img = cv2.imread(image_path)
+
+        if img is None:
+            return None
+
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
         img = cv2.resize(img, (224, 224))  # Resize to 224x224
 
