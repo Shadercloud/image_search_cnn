@@ -9,6 +9,7 @@ class SearchHandler:
         self.request = request
         self.feature_extractor = feature_extractor
         self.database = database
+        self.verbose = program_args.verbose
 
     def handle(self, query_params):
         if "image" not in query_params:
@@ -32,7 +33,11 @@ class SearchHandler:
                 return self.request.json({"error": f"File does not exist: {image_value}"})
             file = p.resolve()
 
+        if self.verbose > 1:
+            print("Getting Image Features from CNN")
         features = self.feature_extractor.extract(file)
+        if self.verbose > 1:
+            print("Received Image Features from CNN")
 
         results = self.database.query(features, limit)
         if compare_opts:
@@ -45,6 +50,3 @@ class SearchHandler:
                         result['compare'][c] = str(getattr(comp, c)())
 
         return self.request.json({"results": results})
-
-    def kill(self):
-        pass

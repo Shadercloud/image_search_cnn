@@ -1,7 +1,8 @@
 import os
 import sqlite3
 from pathlib import Path
-
+os.environ["LOKY_MAX_CPU_COUNT"] = "4"
+from sklearn.neighbors import NearestNeighbors
 import numpy as np
 
 class Database:
@@ -14,6 +15,8 @@ class Database:
         self.conn = sqlite3.connect(self.filename, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self._create_table()
+        self.nn_model = None
+        self.verbose = 0
 
     def _create_table(self):
         """ Creates table to store feature vectors. """
@@ -50,9 +53,14 @@ class Database:
         if self.data:
             self.feature_matrix = np.vstack(list(self.data.values()))  # Stack all feature vectors
             self.img_files = list(self.data.keys())  # Maintain an ordered list of image files
+
+            self.nn_model = NearestNeighbors(n_neighbors=5, algorithm="auto", metric="euclidean")
+            self.nn_model.fit(self.feature_matrix)
         else:
+            self.nn_model = None
             self.feature_matrix = None
             self.img_files = []
+
 
     def load(self):
         """ Loads all image features from the database. """
@@ -73,19 +81,23 @@ class Database:
         if self.features_altered:
             self._update_feature_matrix()
 
-        if self.feature_matrix is None:
+        if self.nn_model is None:
             print("Database is empty. No query can be performed.")
             return []
 
-        # Compute distances using precomputed feature matrix
-        dists = np.linalg.norm(self.feature_matrix - query_vector, axis=1)
+        if self.verbose > 1:
+            print("Finding nearest neighbors...")
 
-        # Get the `top_k` closest matches
-        ids = np.argsort(dists)[:top_k]
+        dists, ids = self.nn_model.kneighbors([query_vector], n_neighbors=top_k)
 
-        nearest_images = [{"image": str(self.img_files[i]), "distance": float(dists[i])} for i in ids]
+        if self.verbose > 1:
+            print(f"Found {len(ids[0])} nearest neighbors.")
+
+        nearest_images = [{"image": self.img_files[ids[0][i]], "distance": float(dists[0][i])} for i in range(len(ids[0]))]
 
         return nearest_images
 
     def count(self):
+        if self.features_altered:
+            self._update_feature_matrix()
         return len(self.img_files)

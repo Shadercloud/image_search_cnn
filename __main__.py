@@ -5,8 +5,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from time import sleep
 from urllib.parse import urlparse, parse_qs
-import json
-
+import orjson
 from handlers.stats_handler import StatsHandler
 from providers.database import Database
 from providers.webserver import WebServer
@@ -38,6 +37,7 @@ feature_extractor = FeatureExtractor()
 # Initialize the database
 database = Database(Path(__file__).parent.resolve() / "data" / f"{params_args.extractor}")
 database.load()
+database.verbose = params_args.verbose
 
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -54,12 +54,12 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        self.wfile.write(orjson.dumps(data))
 
     def not_found(self):
         self.send_response(404)
         self.end_headers()
-        self.wfile.write(json.dumps({"error": "Not Found"}).encode("utf-8"))
+        self.wfile.write(orjson.dumps({"error": "Not Found"}))
 
     def do_GET(self):
         parsed_url = urlparse(self.path)
@@ -73,16 +73,24 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             self.not_found()
 
     def do_POST(self):
+        if params_args.verbose > 1:
+            print(f"Received POST request: {self.path}")
         """ Handles POST requests by parsing JSON data and routing accordingly. """
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)
 
+        if params_args.verbose > 1:
+            print("Finished receiving post data")
+
         try:
-            json_data = json.loads(post_data.decode("utf-8"))  # Parse JSON data
-        except json.JSONDecodeError:
+            json_data = orjson.loads(post_data)  # Parse JSON data
+        except orjson.JSONDecodeError:
             return self.json({"error": "Invalid JSON"})
 
         parsed_url = urlparse(self.path)
+
+        if params_args.verbose > 1:
+            print(f"Loading request handler for {parsed_url.path}")
 
         handler_class = self.routes.get(parsed_url.path)
 

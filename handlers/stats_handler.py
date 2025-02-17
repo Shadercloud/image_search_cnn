@@ -7,6 +7,3 @@ class StatsHandler:
     def handle(self, query_params):
 
         return self.request.json({"images": self.database.count()})
-
-    def kill(self):
-        pass
