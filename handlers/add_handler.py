@@ -30,12 +30,12 @@ class AddHandler:
             if self.shutdown_event.is_set():
                 break
 
+            if self.output_count > 0 and (self.skipped + self.processed) % self.output_count == 0:
+                print(f"Completed {self.processed} | Skipped {self.skipped}")
+
             self.process_image(image)
 
     def process_image(self, image):
-        if self.output_count > 0 and (self.skipped + self.processed) % self.output_count == 0:
-            print(f"Completed {self.processed} | Skipped {self.skipped}")
-
         if not self.allow_update and self.database.exists(os.path.basename(image)):
             with self.lock:
                 self.skipped += 1
@@ -76,7 +76,7 @@ class AddHandler:
         if not p.exists():
             return self.request.json({"error": f"File does not exist: {image_value}"})
 
-        if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+        if p.is_file() and p.suffix.lower() in valid_extensions:
             self.process_image(p.resolve())
         elif p.is_dir():
             # Start worker threads
