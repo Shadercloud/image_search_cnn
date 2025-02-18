@@ -70,14 +70,17 @@ class AddHandler:
         self.processed = 0
         self.skipped = 0
 
-        # Start worker threads
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
-            print(f"Starting {self.num_threads} image processing threads")
-            workers = [executor.submit(self.process_image) for _ in range(self.num_threads)]
+        if not p.exists():
+            return self.request.json({"error": f"File does not exist: {image_value}"})
 
-            if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}:
-                self.queue.put(p.resolve())
-            elif p.is_dir():
+        if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+            self.queue.put(p.resolve())
+        elif p.is_dir():
+            # Start worker threads
+            with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
+                print(f"Starting {self.num_threads} image processing threads")
+                workers = [executor.submit(self.process_image) for _ in range(self.num_threads)]
+
                 with os.scandir(p) as entries:
                     for entry in entries:
                         if entry.is_file() and Path(entry.name).suffix.lower() in valid_extensions:
@@ -87,10 +90,7 @@ class AddHandler:
                                 print(f"File Limit of {self.max_files} exceeded")
                                 break
 
-            elif not p.exists():
-                return self.request.json({"error": f"File does not exist: {image_value}"})
-
-            self.destroy_workers()
+                self.destroy_workers()
 
         print(f"Completed {self.processed} | Skipped {self.skipped}")
 
