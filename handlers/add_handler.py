@@ -20,7 +20,7 @@ class AddHandler:
         self.num_threads = program_args.threads
         self.shutdown_event = shutdown_event
 
-    def process_image(self):
+    def process_image_worker(self):
         """Worker function that processes images from the queue."""
         while True:
             image = self.queue.get()  # Get image path from queue
@@ -30,29 +30,32 @@ class AddHandler:
             if self.shutdown_event.is_set():
                 break
 
-            if self.output_count > 0 and (self.skipped + self.processed) % self.output_count == 0:
-                print(f"Completed {self.processed} | Skipped {self.skipped}")
+            self.process_image(image)
 
-            if not self.allow_update and self.database.exists(os.path.basename(image)):
-                with self.lock:
-                    self.skipped += 1
-                if self.verbose > 1:
-                    print(f"Image {image} already exists")
-                continue
+    def process_image(self, image):
+        if self.output_count > 0 and (self.skipped + self.processed) % self.output_count == 0:
+            print(f"Completed {self.processed} | Skipped {self.skipped}")
 
-            features = self.feature_extractor.extract(image)
-            if features is None:
-                continue
-
-            self.database.add(features, image)
-
+        if not self.allow_update and self.database.exists(os.path.basename(image)):
             with self.lock:
-                if self.processed >= self.max_files:
-                    return
-                self.processed += 1
+                self.skipped += 1
+            if self.verbose > 1:
+                print(f"Image {image} already exists")
+            return
 
-            if self.verbose > 0:
-                print(f"Done Image {self.processed}: {image}")
+        features = self.feature_extractor.extract(image)
+        if features is None:
+            return
+
+        self.database.add(features, image)
+
+        with self.lock:
+            if self.processed >= self.max_files:
+                return
+            self.processed += 1
+
+        if self.verbose > 0:
+            print(f"Done Image {self.processed}: {image}")
 
 
     def handle(self, query_params):
@@ -74,12 +77,12 @@ class AddHandler:
             return self.request.json({"error": f"File does not exist: {image_value}"})
 
         if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}:
-            self.queue.put(p.resolve())
+            self.process_image(p.resolve())
         elif p.is_dir():
             # Start worker threads
             with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
                 print(f"Starting {self.num_threads} image processing threads")
-                workers = [executor.submit(self.process_image) for _ in range(self.num_threads)]
+                workers = [executor.submit(self.process_image_worker) for _ in range(self.num_threads)]
 
                 with os.scandir(p) as entries:
                     for entry in entries:
