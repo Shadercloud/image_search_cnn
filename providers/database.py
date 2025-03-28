@@ -62,15 +62,21 @@ class Database:
             self.img_files = []
 
 
-    def load(self):
+    def load(self, write_only=False):
         """ Loads all image features from the database. """
         self.cursor.execute("SELECT COUNT(*) FROM images")
         count = self.cursor.fetchone()[0]
-        print(f"Loading {count} images from the database.  This may take a while...")
+        if write_only:
+            print(f"Database is loading in WRITE ONLY mode, search queries will not work.  {count} images in the database.")
+        else:
+            print(f"Loading {count} images from the database.  This may take a while...")
 
         self.cursor.execute("SELECT img_file, features FROM images")
         for img_file, feature_blob in self.cursor.fetchall():
-            self.data[img_file] = np.frombuffer(feature_blob, dtype=np.float32)  # Convert binary back to NumPy array
+            if write_only:
+                self.data[img_file] =np.array([1], dtype=np.float32) # Do this so that we can load the database with empty data and track the image keys only
+            else:
+                self.data[img_file] = np.frombuffer(feature_blob, dtype=np.float32)  # Convert binary back to NumPy array
 
         self._update_feature_matrix()
 
@@ -101,3 +107,17 @@ class Database:
         if self.features_altered:
             self._update_feature_matrix()
         return len(self.img_files)
+
+    def remove(self, img_path):
+        basename = os.path.basename(img_path)
+
+        with self.conn:
+            if self.exists(basename):
+                self.conn.execute("DELETE FROM images WHERE img_file = ?", (basename, ))
+                del self.data[basename]
+                self.features_altered = True
+                return True
+
+        return False
+
+

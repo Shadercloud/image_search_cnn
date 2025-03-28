@@ -6,6 +6,8 @@ from pathlib import Path
 from time import sleep
 from urllib.parse import urlparse, parse_qs
 import orjson
+
+from handlers.remove_handler import RemoveHandler
 from handlers.stats_handler import StatsHandler
 from providers.database import Database
 from providers.webserver import WebServer
@@ -24,6 +26,7 @@ parser.add_argument("--verbose", "-v", dest="verbose", default=0, type=int, requ
 parser.add_argument("--output", dest="output", default=100, type=int, required=False, help="Output the count log after processing this many images.")
 parser.add_argument("--update",dest="update_flag", action="store_true", help="Update an image if it already exists, instead of skipping it. (Default False")
 parser.add_argument("--threads", dest="threads", default=2, type=int, required=False, help="Number of threads to run during image processing.")
+parser.add_argument("--write-only",dest="write_only", action="store_true", help="When loading the database load the keys only, image searching will not work, but it is useful for updating the database without loading the full dataset (Default False")
 params_args = parser.parse_args()
 
 # Dynamically import the chosen extractor
@@ -36,7 +39,7 @@ feature_extractor = FeatureExtractor()
 
 # Initialize the database
 database = Database(Path(__file__).parent.resolve() / "data" / f"{params_args.extractor}")
-database.load()
+database.load(params_args.write_only)
 database.verbose = params_args.verbose
 
 
@@ -46,7 +49,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.routes = {
             "/add": AddHandler,
             "/search": SearchHandler,
-            "/stats": StatsHandler
+            "/stats": StatsHandler,
+            "/remove": RemoveHandler,
         }
         super().__init__(*args, **kwargs)  # Call parent constructor
 
