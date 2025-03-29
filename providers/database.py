@@ -84,8 +84,8 @@ class Database:
 
     def query(self, query_vector, top_k=5):
         """ Finds the closest feature matches and returns (image_path, distance). """
-        if self.features_altered:
-            self._update_feature_matrix()
+        # if self.features_altered:
+        #     self._update_feature_matrix()
 
         if self.nn_model is None:
             print("Database is empty. No query can be performed.")
