@@ -43,8 +43,6 @@ class Database:
         """ Adds or updates an entry with features and associated image path. """
         feature_blob = feature_vector.tobytes()
 
-        print(f"[INFO] Add File {basename}")
-
         with self.conn:
             if self.exists(basename):
                 print(f"Image '{basename}' already exists. Updating features.")
@@ -78,9 +76,7 @@ class Database:
             print(f"[INFO] FAISS Index file {self.index_path} does not exists so build a new index")
             self.build()
 
-    def load_vector_batch(self, batch_size):
-        self.cursor.execute("SELECT COUNT(*) FROM images")
-        total = self.cursor.fetchone()[0]
+    def load_vector_batch(self, total, batch_size):
 
         for offset in range(0, total, batch_size):
             start_time = time.time()
@@ -105,11 +101,17 @@ class Database:
             yield np.vstack(vectors), img_files
 
     def build(self):
+        self.cursor.execute("SELECT COUNT(*) FROM images")
+        total = self.cursor.fetchone()[0]
+        if total == 0:
+            print("f[INFO] Database does not have any data yet so cannot build indexes")
+            return
+
         print(f"[INFO] Number of threads: {faiss.omp_get_max_threads()}")
 
         # ---- TRAINING ----
         print("[INFO] Loading training batch...")
-        train_batch, _ = next(self.load_vector_batch(self.batch_size))
+        train_batch, _ = next(self.load_vector_batch(total, self.batch_size))
         print(f"[INFO] Training index on {train_batch.shape[0]} vectors...")
 
         # Prepare index
@@ -126,7 +128,7 @@ class Database:
         total_added = 0
         start_time = time.time()
 
-        for batch, img_files in self.load_vector_batch(self.batch_size):
+        for batch, img_files in self.load_vector_batch(total, self.batch_size):
             self.index.add(batch)
             all_img_files.extend(img_files)
             total_added += len(batch)
