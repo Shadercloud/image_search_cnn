@@ -104,7 +104,7 @@ class Database:
         self.cursor.execute("SELECT COUNT(*) FROM images")
         total = self.cursor.fetchone()[0]
         if total == 0:
-            print("f[INFO] Database does not have any data yet so cannot build indexes")
+            print("[INFO] Database does not have any data yet so cannot build indexes")
             return
 
         print(f"[INFO] Number of threads: {faiss.omp_get_max_threads()}")

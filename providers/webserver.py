@@ -14,14 +14,10 @@ class WebServer(threading.Thread):
         self.ws.serve_forever()
 
     def shutdown(self):
-        # set the two flags needed to shutdown the HTTP server manually
-        self.ws._BaseServer__is_shut_down.set()
-        self.ws.__shutdown_request = True
-
-        print('Shutting down server.')
+        print('[INFO] Shutting down server.')
         # call it anyway, for good measure...
         self.ws.shutdown()
-        print('Closing server.')
+        print('[INFO] Closing server.')
         self.ws.server_close()
-        print('Closing thread.')
+        print('[INFO] Closing thread.')
         self.join()
