@@ -3,9 +3,9 @@ import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
 class Compare:
-    def __init__(self, path1):
-        self.path1 = path1
-        self.img1 = cv2.imread(path1, cv2.IMREAD_GRAYSCALE)
+    def __init__(self, img1):
+        self.img1_color = img1
+        self.img1 = cv2.cvtColor(self.img1_color, cv2.COLOR_BGR2GRAY)
         self.img2 = None
         self.path2 = None
 
@@ -93,7 +93,7 @@ class Compare:
 
     def histogram(self):
         # Don't use the grayscale images
-        img1 = cv2.imread(self.path1)
+        img1 = self.img1_color
         img2 = cv2.imread(self.path2)
 
         # Convert to HSV for better color matching

@@ -5,10 +5,10 @@ The purpose of this tool is to build a database index of images, then allow an i
 ## Quick Start
 
 ```
-git clone https://github.com/Shadercloud/image_search_ccn
-cd image_search
-pip install -r /path/to/requirements.txt
-
+install miniconda from https://www.anaconda.com/download
+git clone https://github.com/Shadercloud/image_search_cnn
+cd image_search_cnn
+conda env create -f environment.yml
 python ./
 ```
 

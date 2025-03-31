@@ -1,22 +1,28 @@
 import os
 import sqlite3
 from pathlib import Path
-os.environ["LOKY_MAX_CPU_COUNT"] = "4"
-from sklearn.neighbors import NearestNeighbors
+import faiss
 import numpy as np
+faiss.omp_set_num_threads(faiss.omp_get_max_threads() - 2)
+import time
+
 
 class Database:
     def __init__(self, filename):
-        self.data = {}  # Dictionary: {img_file: features}
-        self.feature_matrix = None  # Precomputed feature matrix for fast querying
-        self.features_altered = True
-        self.img_files = []  # Ordered list of image paths
         self.filename = Path(filename).with_suffix(".sqlite")
         self.conn = sqlite3.connect(self.filename, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self._create_table()
-        self.nn_model = None
+        self.index = None
+        self.mapping = None
         self.verbose = 0
+        self.batch_size = 1000000
+        self.vector_dim = 768
+        self.nprobe = 50
+        self.nlist = 4096
+        self.index_path = str(Path(filename).with_name(Path(filename).stem + "_faiss_index.ivf"))
+        self.mapping_path = str(Path(filename).with_name(Path(filename).stem + "_faiss_index_mapping.npy"))
+        self.index_changed = False
 
     def _create_table(self):
         """ Creates table to store feature vectors. """
@@ -30,83 +36,136 @@ class Database:
 
     def exists(self, img_file):
         """ Check if an image already exists in the database. """
-        return img_file in self.data
+        return img_file in self.mapping
 
     def add(self, feature_vector, img_path):
         basename = os.path.basename(img_path)
         """ Adds or updates an entry with features and associated image path. """
         feature_blob = feature_vector.tobytes()
 
+        print(f"[INFO] Add File {basename}")
+
         with self.conn:
             if self.exists(basename):
                 print(f"Image '{basename}' already exists. Updating features.")
                 self.conn.execute("UPDATE images SET features = ? WHERE img_file = ?", (feature_blob, basename))
             else:
-                self.conn.execute("INSERT INTO images (img_file, features) VALUES (?, ?)", (basename, feature_blob))
+                self.conn.execute("REPLACE INTO images (img_file, features) VALUES (?, ?)", (basename, feature_blob))
 
-        self.data[basename] = np.array(feature_vector, dtype="float32")  # Store in dictionary
-        self.features_altered = True
+        # Add vector to index
+        self.index.add(np.expand_dims(feature_vector, axis=0))
 
-    def _update_feature_matrix(self):
-        self.features_altered = False
-        """ Recomputes the NumPy feature matrix for fast queries. """
-        if self.data:
-            self.feature_matrix = np.vstack(list(self.data.values()))  # Stack all feature vectors
-            self.img_files = list(self.data.keys())  # Maintain an ordered list of image files
+        # Update mapping
+        self.mapping = np.append(self.mapping, basename)
 
-            self.nn_model = NearestNeighbors(n_neighbors=5, algorithm="auto", metric="euclidean")
-            self.nn_model.fit(self.feature_matrix)
+        self.index_changed = True
+
+
+    def load(self):
+        if Path(self.index_path).exists() and Path(self.mapping_path).exists():
+            print("[INFO] Loading index mapping...")
+            self.mapping = np.load(self.mapping_path, allow_pickle=True)
+
+            print(f"[INFO] Mapping loaded with {self.mapping.shape[0]} indexes")
+
+            print("[INFO] Loading FAISS index...")
+            self.index = faiss.read_index(self.index_path)
+            if hasattr(self.index, "nprobe"):
+                self.index.nprobe = self.nprobe
+
+            print("[INFO] Loading Database Completed")
         else:
-            self.nn_model = None
-            self.feature_matrix = None
-            self.img_files = []
+            print(f"[INFO] FAISS Index file {self.index_path} does not exists so build a new index")
+            self.build()
 
-
-    def load(self, write_only=False):
-        """ Loads all image features from the database. """
+    def load_vector_batch(self, batch_size):
         self.cursor.execute("SELECT COUNT(*) FROM images")
-        count = self.cursor.fetchone()[0]
-        if write_only:
-            print(f"Database is loading in WRITE ONLY mode, search queries will not work.  {count} images in the database.")
-        else:
-            print(f"Loading {count} images from the database.  This may take a while...")
+        total = self.cursor.fetchone()[0]
 
-        self.cursor.execute("SELECT img_file, features FROM images")
-        for img_file, feature_blob in self.cursor.fetchall():
-            if write_only:
-                self.data[img_file] =np.array([1], dtype=np.float32) # Do this so that we can load the database with empty data and track the image keys only
-            else:
-                self.data[img_file] = np.frombuffer(feature_blob, dtype=np.float32)  # Convert binary back to NumPy array
+        for offset in range(0, total, batch_size):
+            start_time = time.time()
+            self.cursor.execute(f"""
+                SELECT img_file, features
+                FROM images
+                LIMIT {batch_size} OFFSET {offset}
+            """)
+            rows = self.cursor.fetchall()
 
-        self._update_feature_matrix()
+            img_files = []
+            vectors = []
 
-        print("Loading Database Completed")
+            for img_file, feature_blob in rows:
+                feature_vector = np.frombuffer(feature_blob, dtype=np.float32)
+                img_files.append(img_file)
+                vectors.append(feature_vector)
+
+            elapsed = time.time() - start_time
+            print(f"[INFO] Loaded batch: offset={offset}, size={len(vectors)}, time={elapsed:.2f}s")
+
+            yield np.vstack(vectors), img_files
+
+    def build(self):
+        print(f"[INFO] Number of threads: {faiss.omp_get_max_threads()}")
+
+        # ---- TRAINING ----
+        print("[INFO] Loading training batch...")
+        train_batch, _ = next(self.load_vector_batch(self.batch_size))
+        print(f"[INFO] Training index on {train_batch.shape[0]} vectors...")
+
+        # Prepare index
+        quantizer = faiss.IndexFlatL2(self.vector_dim)
+        self.index = faiss.IndexIVFFlat(quantizer, self.vector_dim, self.nlist, faiss.METRIC_L2)
+
+        self.index.train(train_batch)
+        print("[INFO] Training done on CPU.")
+
+        # ---- ADD VECTORS + BUILD MAPPING ----
+        print("[INFO] Adding vectors on CPU...")
+        all_img_files = []
+        batch_num = 0
+        total_added = 0
+        start_time = time.time()
+
+        for batch, img_files in self.load_vector_batch(self.batch_size):
+            self.index.add(batch)
+            all_img_files.extend(img_files)
+            total_added += len(batch)
+            batch_num += 1
+            print(f"[INFO] Added batch {batch_num}: {len(batch)} vectors, total added: {total_added}")
+
+        elapsed = time.time() - start_time
+        print(f"[INFO] Finished adding vectors. Total vectors: {total_added}, time: {elapsed:.2f}s")
+
+        # ---- SAVE INDEX ----
+        print(f"[INFO] Saving index to {self.index_path}")
+        faiss.write_index(self.index, self.index_path)
+
+        # ---- SAVE MAPPING ----
+        print(f"[INFO] Saving ID mapping to {self.mapping_path}")
+        self.mapping = np.array(all_img_files)
+        np.save(self.mapping_path, self.mapping)
+
+        print("[INFO] Index and mapping saved successfully.")
 
     def query(self, query_vector, top_k=5):
-        """ Finds the closest feature matches and returns (image_path, distance). """
-        # if self.features_altered:
-        #     self._update_feature_matrix()
+        query = np.expand_dims(query_vector, axis=0).astype('float32')
 
-        if self.nn_model is None:
-            print("Database is empty. No query can be performed.")
-            return []
+        d, i = self.index.search(query, top_k)
+        results = []
+        for rank, (idx, dist) in enumerate(zip(i[0], d[0])):
+            if idx == -1:
+                continue
+            img_file = self.mapping[idx]
 
-        if self.verbose > 1:
-            print("Finding nearest neighbors...")
+            results.append({
+                "image": str(img_file),
+                "distance": float(dist)
+            })
 
-        dists, ids = self.nn_model.kneighbors([query_vector], n_neighbors=top_k)
-
-        if self.verbose > 1:
-            print(f"Found {len(ids[0])} nearest neighbors.")
-
-        nearest_images = [{"image": self.img_files[ids[0][i]], "distance": float(dists[0][i])} for i in range(len(ids[0]))]
-
-        return nearest_images
+        return results
 
     def count(self):
-        if self.features_altered:
-            self._update_feature_matrix()
-        return len(self.img_files)
+        return len(self.mapping)
 
     def remove(self, img_path):
         basename = os.path.basename(img_path)
@@ -114,10 +173,13 @@ class Database:
         with self.conn:
             if self.exists(basename):
                 self.conn.execute("DELETE FROM images WHERE img_file = ?", (basename, ))
-                del self.data[basename]
-                self.features_altered = True
                 return True
 
         return False
+
+    def save(self):
+        if self.index_changed:
+            faiss.write_index(self.index, self.index_path)
+            np.save(self.mapping_path, self.mapping)
 
 

@@ -1,7 +1,10 @@
 from pathlib import Path
-
 from helpers.image_helper import readb64
 from providers.compare import Compare
+import cv2
+
+import yaml
+config = yaml.safe_load(open("./config.yml"))
 
 
 class SearchHandler:
@@ -31,7 +34,7 @@ class SearchHandler:
 
             if not p.is_file():
                 return self.request.json({"error": f"File does not exist: {image_value}"})
-            file = p.resolve()
+            file = cv2.imread(p.resolve())
 
         if self.verbose > 1:
             print("Getting Image Features from CNN")
@@ -40,10 +43,10 @@ class SearchHandler:
             print("Received Image Features from CNN")
 
         results = self.database.query(features, limit)
-        if compare_opts:
-            comp = Compare(p.resolve())
+        if compare_opts and "images" in config and "path" in config["images"]:
+            comp = Compare(file)
             for result in results:
-                comp.set(result['image'])
+                comp.set(Path(config['images']['path'] + result['image']))
                 result['compare'] = {}
                 for c in compare_opts:
                     if hasattr(comp, c) and callable(getattr(comp, c)):

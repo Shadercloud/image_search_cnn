@@ -26,7 +26,6 @@ parser.add_argument("--verbose", "-v", dest="verbose", default=0, type=int, requ
 parser.add_argument("--output", dest="output", default=100, type=int, required=False, help="Output the count log after processing this many images.")
 parser.add_argument("--update",dest="update_flag", action="store_true", help="Update an image if it already exists, instead of skipping it. (Default False")
 parser.add_argument("--threads", dest="threads", default=2, type=int, required=False, help="Number of threads to run during image processing.")
-parser.add_argument("--write-only",dest="write_only", action="store_true", help="When loading the database load the keys only, image searching will not work, but it is useful for updating the database without loading the full dataset (Default False")
 params_args = parser.parse_args()
 
 # Dynamically import the chosen extractor
@@ -39,7 +38,7 @@ feature_extractor = FeatureExtractor()
 
 # Initialize the database
 database = Database(Path(__file__).parent.resolve() / "data" / f"{params_args.extractor}")
-database.load(params_args.write_only)
+database.load()
 database.verbose = params_args.verbose
 
 
@@ -105,15 +104,15 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     webServer = WebServer(SimpleHTTPRequestHandler, params_args.host, params_args.port)
-    webServer.start()
-    while True:
-        try:
-            sleep(1)
-        except KeyboardInterrupt:
-            print('Keyboard Interrupt sent.')
-            shutdown_event.set()
-            sleep(2)
-            webServer.shutdown()
-            print("Saving Database")
-            print("Exiting")
-            exit(0)
+
+    try:
+        webServer.start()
+    except KeyboardInterrupt:
+        print('Keyboard Interrupt sent.')
+        shutdown_event.set()
+        sleep(2)
+        webServer.shutdown()
+        print("Saving Database")
+        database.save()
+        print("Exiting")
+        exit(0)
