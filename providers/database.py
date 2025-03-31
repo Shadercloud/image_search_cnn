@@ -3,8 +3,13 @@ import sqlite3
 from pathlib import Path
 import faiss
 import numpy as np
-faiss.omp_set_num_threads(faiss.omp_get_max_threads() - 2)
 import time
+
+import yaml
+config = yaml.safe_load(open(Path(__file__).parent.parent.resolve() / "config.yml"))
+if "cpu" in config and "max_threads" in config["cpu"]:
+    faiss.omp_set_num_threads(config["cpu"]["max_threads"])
+
 
 
 class Database:

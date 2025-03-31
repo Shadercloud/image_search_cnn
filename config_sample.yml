@@ -1,2 +1,4 @@
 images:
   path: '/path/image/storage/on/server/'
+cpu:
+  max_threads: 2
