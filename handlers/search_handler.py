@@ -4,7 +4,7 @@ from providers.compare import Compare
 import cv2
 
 import yaml
-config = yaml.safe_load(open(Path(__file__).parent.resolve() / "data" / "config.yml"))
+config = yaml.safe_load(open(Path(__file__).parent.parent.resolve() / "data" / "config.yml"))
 
 
 class SearchHandler:
