@@ -6,6 +6,9 @@ from pathlib import Path
 from time import sleep
 from urllib.parse import urlparse, parse_qs
 import orjson
+import sys
+import signal
+
 
 from handlers.remove_handler import RemoveHandler
 from handlers.stats_handler import StatsHandler
@@ -14,6 +17,7 @@ from providers.webserver import WebServer
 
 from handlers.add_handler import AddHandler
 from handlers.search_handler import SearchHandler
+
 
 shutdown_event = threading.Event()
 
@@ -102,17 +106,25 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         else:
             self.not_found()
 
+
+
 if __name__ == "__main__":
     webServer = WebServer(SimpleHTTPRequestHandler, params_args.host, params_args.port)
 
-    try:
-        webServer.start()
-    except KeyboardInterrupt:
-        print('Keyboard Interrupt sent.')
+    def shutdown_handler(signum, frame):
+        print("\n[INFO] Ctrl+C detected. Shutting down cleanly...")
+
+        # === Your custom cleanup here ===
         shutdown_event.set()
-        sleep(2)
         webServer.shutdown()
-        print("Saving Database")
         database.save()
-        print("Exiting")
-        exit(0)
+        print("[INFO] Database saved, server shut down.")
+
+        sys.exit(0)  # Clean exit
+
+
+    # Register signal
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)  # optional, for kill signal
+
+    webServer.start()
