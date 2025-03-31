@@ -3,7 +3,6 @@ import importlib
 import threading
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from time import sleep
 from urllib.parse import urlparse, parse_qs
 import orjson
 import sys
