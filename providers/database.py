@@ -82,15 +82,25 @@ class Database:
             print(f"[INFO] FAISS Index file {self.index_path} does not exists so build a new index")
             self.build()
 
-    def load_vector_batch(self, total, batch_size):
+    def load_vector_batch(self, total, batch_size, random=False):
 
         for offset in range(0, total, batch_size):
             start_time = time.time()
-            self.cursor.execute(f"""
-                SELECT img_file, features
-                FROM images
-                LIMIT {batch_size} OFFSET {offset}
-            """)
+            if random:
+                query = f"""
+                            SELECT img_file, features
+                            FROM images
+                            ORDER BY RANDOM()
+                            LIMIT {batch_size}
+                        """
+            else:
+                query = f"""
+                            SELECT img_file, features
+                            FROM images
+                            LIMIT {batch_size} OFFSET {offset}
+                        """
+
+            self.cursor.execute(query)
             rows = self.cursor.fetchall()
 
             img_files = []
@@ -117,7 +127,7 @@ class Database:
 
         # ---- TRAINING ----
         print("[INFO] Loading training batch...")
-        train_batch, _ = next(self.load_vector_batch(total, self.batch_size))
+        train_batch, _ = next(self.load_vector_batch(total, self.batch_size, True))
         print(f"[INFO] Training index on {train_batch.shape[0]} vectors...")
 
         # Prepare index
