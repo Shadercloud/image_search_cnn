@@ -191,6 +191,7 @@ class Database:
                 print("[INFO] Saving FAISS index...")
                 faiss.write_index(self.index, self.index_path)
                 np.save(self.mapping_path, self.mapping)
+                print("[INFO] Save Completed")
         else:
             print("[INFO] No need to save FAISS index.")
 
