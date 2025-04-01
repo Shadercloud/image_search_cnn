@@ -1,10 +1,8 @@
 from pathlib import Path
+from helpers.config_helper import config
 from helpers.image_helper import readb64
 from providers.compare import Compare
 import cv2
-
-import yaml
-config = yaml.safe_load(open(Path(__file__).parent.parent.resolve() / "config.yml"))
 
 
 class SearchHandler:
@@ -43,10 +41,11 @@ class SearchHandler:
             print("Received Image Features from CNN")
 
         results = self.database.query(features, limit)
-        if compare_opts and "images" in config and "path" in config["images"]:
+        image_path = config.get("path", "images")
+        if compare_opts and image_path:
             comp = Compare(file)
             for result in results:
-                comp.set(Path(config['images']['path'] + result['image']))
+                comp.set(Path(image_path + result['image']))
                 result['compare'] = {}
                 for c in compare_opts:
                     if hasattr(comp, c) and callable(getattr(comp, c)):

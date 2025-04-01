@@ -2,27 +2,29 @@
 
 The purpose of this tool is to build a database index of images, then allow an image to be compared to the database to find the closest matches.
 
+[CLIP](https://github.com/openai/CLIP) is used to extract the image features as a vector.
+
+[FAISS](https://github.com/facebookresearch/faiss) is used to compare image feature vectors to find the closest matches.
+
+## Requirement
+This project requires conda as it is the only easy way to install FAISS.
+
+Install miniconda from https://www.anaconda.com/download
+
 ## Quick Start
 
 ```
-install miniconda from https://www.anaconda.com/download
 git clone https://github.com/Shadercloud/image_search_cnn
 cd image_search_cnn
 conda env create -f environment.yml
+conda activate
 python ./
 ```
 
 ## Database
+All image vectors are store in an SQLite database file in the data directory.
 
-The data is store in `pickle` files in the `/data` directory.  This will be automatically loaded when the program is started.  You do not need to re-add images each times.
-
-Note that each extractor has its own database file as data from one extractor is not comparable with data from another extractor. 
-
-## Extractor
-
-The program is set up with multiple extractor classes, currently a "clip" or "resnet" version.  For my use case I found the [CLIP](https://github.com/openai/CLIP) model to work much better (which is the default extractor).
-
-Start the server with `python ./ --extractor resnet` if you want to use the other model.
+FAISS index files are also stored in the data directory
 
 ## Webserver
 

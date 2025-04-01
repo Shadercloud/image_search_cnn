@@ -4,15 +4,16 @@ from pathlib import Path
 import faiss
 import numpy as np
 import time
-
-import yaml
-config = yaml.safe_load(open(Path(__file__).parent.parent.resolve() / "config.yml"))
-if "cpu" in config and "max_threads" in config["cpu"]:
-    faiss.omp_set_num_threads(config["cpu"]["max_threads"])
-    print(f"[INFO] Faiss max threads set to {config['cpu']['max_threads']}")
+import threading
+from helpers.config_helper import config
 
 class Database:
     def __init__(self, filename):
+        max_threads = config.get("cpu", "max_threads")
+        if max_threads:
+            faiss.omp_set_num_threads(max_threads)
+            print(f"[INFO] Faiss max threads set to {max_threads}")
+
         self.filename = Path(filename).with_suffix(".sqlite")
         self.conn = sqlite3.connect(self.filename, check_same_thread=False)
         self.cursor = self.conn.cursor()
@@ -20,13 +21,14 @@ class Database:
         self.index = None
         self.mapping = None
         self.verbose = 0
-        self.batch_size = 1000000
-        self.vector_dim = 768
-        self.nprobe = 50
-        self.nlist = 4096
+        self.batch_size = config.get("faiss", "batch_size", default=1000000)
+        self.vector_dim = config.get("faiss", "vector_dim", default=768)
+        self.nprobe = config.get("faiss", "nprobe", default=50)
+        self.nlist = config.get("faiss", "nlist", default=4096)
         self.index_path = str(Path(filename).with_name(Path(filename).stem + "_faiss_index.ivf"))
         self.mapping_path = str(Path(filename).with_name(Path(filename).stem + "_faiss_index_mapping.npy"))
         self.index_changed = False
+        self.lock = threading.Lock()
 
     def _create_table(self):
         """ Creates table to store feature vectors. """
@@ -54,11 +56,11 @@ class Database:
             else:
                 self.conn.execute("REPLACE INTO images (img_file, features) VALUES (?, ?)", (basename, feature_blob))
 
-        # Add vector to index
-        self.index.add(np.expand_dims(feature_vector, axis=0))
-
-        # Update mapping
-        self.mapping = np.append(self.mapping, basename)
+        with self.lock:
+            # Add vector to index
+            self.index.add(np.expand_dims(feature_vector, axis=0))
+            # Update mapping
+            self.mapping = np.append(self.mapping, basename)
 
         self.index_changed = True
 
@@ -185,7 +187,11 @@ class Database:
 
     def save(self):
         if self.index_changed:
-            faiss.write_index(self.index, self.index_path)
-            np.save(self.mapping_path, self.mapping)
+            with self.lock:
+                print("[INFO] Saving FAISS index...")
+                faiss.write_index(self.index, self.index_path)
+                np.save(self.mapping_path, self.mapping)
+        else:
+            print("[INFO] No need to save FAISS index.")
 
 

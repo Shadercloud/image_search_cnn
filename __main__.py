@@ -11,6 +11,7 @@ import signal
 
 from handlers.remove_handler import RemoveHandler
 from handlers.stats_handler import StatsHandler
+from helpers.config_helper import config
 from providers.database import Database
 from providers.webserver import WebServer
 
@@ -23,8 +24,8 @@ shutdown_event = threading.Event()
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Run the feature extraction web server.")
 parser.add_argument("--extractor",default="clip", type=str, choices=["clip", "resnet"], required=False, help="Choose which feature extractor to use (clip or resnet)")
-parser.add_argument("--host",default="localhost", type=str, required=False, help="Webserver host")
-parser.add_argument("--port",default=8080, type=int, required=False, help="Webserver port")
+parser.add_argument("--host",default=config.get("webserver", "host", default='localhost'), type=str, required=False, help="Webserver host")
+parser.add_argument("--port",default=config.get("webserver", "port", default=8080), type=int, required=False, help="Webserver port")
 parser.add_argument("--verbose", "-v", dest="verbose", default=0, type=int, required=False, help="Level of log output (0 = Not much, 1 = Info, 2 = Debug")
 parser.add_argument("--output", dest="output", default=100, type=int, required=False, help="Output the count log after processing this many images.")
 parser.add_argument("--update",dest="update_flag", action="store_true", help="Update an image if it already exists, instead of skipping it. (Default False")
@@ -109,6 +110,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     webServer = WebServer(SimpleHTTPRequestHandler, params_args.host, params_args.port)
+
+    webServer.add_task(database.save)
 
     def shutdown_handler(signum, frame):
         print("\n[INFO] Ctrl+C detected. Shutting down cleanly...")

@@ -2,3 +2,12 @@ images:
   path: '/path/image/storage/on/server/'
 cpu:
   max_threads: 2
+faiss:
+  batch_size: 1000000
+  vector_dim: 768
+  nprobe: 50
+  nlist: 4096
+webserver:
+  port: 8080
+  host: 'localhost'
+  periodic_task: 300
