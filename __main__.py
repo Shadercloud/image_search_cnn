@@ -10,9 +10,11 @@ import signal
 
 
 from handlers.remove_handler import RemoveHandler
+from handlers.rotation_handler import RotationHandler
 from handlers.stats_handler import StatsHandler
 from helpers.config_helper import config
 from providers.database import Database
+from providers.rotation import RotationCNN
 from providers.webserver import WebServer
 
 from handlers.add_handler import AddHandler
@@ -45,6 +47,7 @@ database = Database(Path(__file__).parent.resolve() / "data" / f"{params_args.ex
 database.load()
 database.verbose = params_args.verbose
 
+rotation_extractor = RotationCNN()
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -54,6 +57,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             "/search": SearchHandler,
             "/stats": StatsHandler,
             "/remove": RemoveHandler,
+            "/rotation": RotationHandler,
         }
         super().__init__(*args, **kwargs)  # Call parent constructor
 
@@ -75,7 +79,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         handler_class = self.routes.get(parsed_url.path)
 
         if handler_class:
-            handler_class(params_args, self, feature_extractor, database, shutdown_event).handle(query_params)
+            handler_class(params_args, self, parsed_url.path == "/rotation" and rotation_extractor or feature_extractor, database, shutdown_event).handle(query_params)
         else:
             self.not_found()
 

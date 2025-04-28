@@ -4,6 +4,7 @@ channels:
   - defaults
 dependencies:
   - pytorch::pytorch
+  - pytorch::torchvision
   - pytorch::faiss-cpu
   - orjson
   - opencv
