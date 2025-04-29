@@ -78,9 +78,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
         handler_class = self.routes.get(parsed_url.path)
 
-        extractor = rotation_extractor if handler_class == RotationHandler else feature_extractor
-
         if handler_class:
+            extractor = rotation_extractor if handler_class == RotationHandler else feature_extractor
             handler_class(params_args, self, extractor, database, shutdown_event).handle(query_params)
         else:
             self.not_found()
@@ -108,7 +107,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         handler_class = self.routes.get(parsed_url.path)
 
         if handler_class:
-            handler_class(params_args, self, feature_extractor, database, shutdown_event).handle(json_data)
+            extractor = rotation_extractor if handler_class == RotationHandler else feature_extractor
+            handler_class(params_args, self, extractor, database, shutdown_event).handle(json_data)
         else:
             self.not_found()
 
