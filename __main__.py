@@ -9,6 +9,7 @@ import sys
 import signal
 
 
+from handlers.missing_handler import MissingHandler
 from handlers.remove_handler import RemoveHandler
 from handlers.rotation_handler import RotationHandler
 from handlers.stats_handler import StatsHandler
@@ -57,6 +58,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             "/search": SearchHandler,
             "/stats": StatsHandler,
             "/remove": RemoveHandler,
+            "/missing": MissingHandler,
             "/rotation": RotationHandler,
         }
         super().__init__(*args, **kwargs)  # Call parent constructor

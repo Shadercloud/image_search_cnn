@@ -121,6 +121,22 @@ Removes an image from the database by filename (matched against the basename use
 http://localhost:8080/remove?image=image.jpg
 ```
 
+### Find Missing Images
+
+POST up to 10,000 file names (or paths - only the basename is compared); returns the ones that are not in the index. Used to find images that were never added, without sending each one to `/add`.
+
+```
+POST http://localhost:8080/missing
+{"images": ["a.jpg", "b.jpg"]}
+```
+
+**Returns Example:**
+```json
+{
+    "missing": ["b.jpg"]
+}
+```
+
 ### Detect Rotation
 
 Predicts whether an image is rotated, using a MobileNetV2 classifier (`models/rotation_classifier.pth`) trained to recognise 0, 90, 180 and 270 degree rotations. This does not require the image to already be in the database.

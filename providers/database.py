@@ -20,6 +20,9 @@ class Database:
         self._create_table()
         self.index = None
         self.mapping = None
+        # File names in the index (same contents as mapping), for O(1) membership checks:
+        # `name in self.mapping` scans the whole array (millions of entries) every time
+        self.names = set()
         self.verbose = 0
         self.batch_size = config.get("faiss", "batch_size", default=1000000)
         self.vector_dim = config.get("faiss", "vector_dim", default=768)
@@ -42,7 +45,15 @@ class Database:
 
     def exists(self, img_file):
         """ Check if an image already exists in the database. """
-        return img_file in self.mapping
+        return img_file in self.names
+
+    def missing(self, img_files):
+        """ The file names (basenames) from img_files that are not in the index. """
+        return [f for f in img_files if os.path.basename(f) not in self.names]
+
+    def _load_names(self):
+        self.names = set(self.mapping.tolist()) if self.mapping is not None else set()
+        print(f"[INFO] Name set built with {len(self.names)} entries")
 
     def add(self, feature_vector, img_path):
         basename = os.path.basename(img_path)
@@ -61,6 +72,7 @@ class Database:
             self.index.add(np.expand_dims(feature_vector, axis=0))
             # Update mapping
             self.mapping = np.append(self.mapping, basename)
+            self.names.add(basename)
 
         self.index_changed = True
 
@@ -71,6 +83,7 @@ class Database:
             self.mapping = np.load(self.mapping_path, allow_pickle=True)
 
             print(f"[INFO] Mapping loaded with {self.mapping.shape[0]} indexes")
+            self._load_names()
 
             print("[INFO] Loading FAISS index...")
             self.index = faiss.read_index(self.index_path)
@@ -162,6 +175,7 @@ class Database:
         print(f"[INFO] Saving ID mapping to {self.mapping_path}")
         self.mapping = np.array(all_img_files)
         np.save(self.mapping_path, self.mapping)
+        self._load_names()
 
         print("[INFO] Index and mapping saved successfully.")
 
