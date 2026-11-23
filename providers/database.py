@@ -7,6 +7,9 @@ import time
 import threading
 from helpers.config_helper import config
 
+# Mapping entry for an index vector whose image name is unknown (see _fill_mapping_gap)
+UNNAMED = "__unnamed__"
+
 class Database:
     def __init__(self, filename):
         max_threads = config.get("cpu", "max_threads")
@@ -53,6 +56,7 @@ class Database:
 
     def _load_names(self):
         self.names = set(self.mapping.tolist()) if self.mapping is not None else set()
+        self.names.discard(UNNAMED)
         print(f"[INFO] Name set built with {len(self.names)} entries")
 
     def add(self, feature_vector, img_path):
@@ -190,6 +194,8 @@ class Database:
             if idx == -1:
                 continue
             img_file = self.mapping[idx]
+            if img_file == UNNAMED:
+                continue
 
             results.append({
                 "image": str(img_file),
@@ -219,6 +225,7 @@ class Database:
         whichever is longer back to the shorter one. This happens in memory only and does
         not mark the index as changed: the next ordinary save writes a consistent pair.
         """
+        self._fill_mapping_gap()
         n_index, n_mapping = self.index.ntotal, self.mapping.shape[0]
         if n_index == n_mapping:
             return
@@ -233,6 +240,32 @@ class Database:
             print(f"[WARN] Dropped {n_mapping - n_index} mapping names with no vector")
         if self.index.ntotal != self.mapping.shape[0]:
             raise RuntimeError(f"Index/mapping repair failed: {self.index.ntotal} vs {self.mapping.shape[0]}")
+
+    def _fill_mapping_gap(self):
+        """
+        One-time correction for vectors that were added to the index without a name.
+        Every vector after them then belongs to the name `count` places earlier in the
+        mapping, so searches return the wrong image. Configured as
+            faiss:
+              mapping_gap: {at: <first unnamed index position>, count: <how many>}
+        Inserts `count` placeholder names at `at`, in memory only. It is skipped once the
+        mapping already has the placeholders there, for example after the next save
+        writes them, so the setting can be removed after that.
+        """
+        gap = config.get("faiss", "mapping_gap", default=None)
+        if not gap:
+            return
+        at, count = int(gap["at"]), int(gap["count"])
+        if all(str(x) == UNNAMED for x in self.mapping[at:at + count]) and at + count <= self.mapping.shape[0]:
+            print(f"[INFO] mapping_gap at {at} already filled - the setting can be removed")
+            return
+        if self.index.ntotal < self.mapping.shape[0] + count:
+            print(f"[WARN] mapping_gap ignored: index has {self.index.ntotal} vectors, too few "
+                  f"for {self.mapping.shape[0]} names plus {count} placeholders")
+            return
+        placeholders = np.full(count, UNNAMED, dtype=np.result_type(self.mapping.dtype, np.array([UNNAMED]).dtype))
+        self.mapping = np.concatenate([self.mapping[:at], placeholders, self.mapping[at:]])
+        print(f"[WARN] Inserted {count} placeholder names at position {at} (vectors with no name)")
 
     def _write_index_throttled(self, path):
         """
