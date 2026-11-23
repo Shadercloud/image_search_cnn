@@ -9,6 +9,7 @@ import sys
 import signal
 
 
+from handlers.compact_handler import CompactHandler
 from handlers.missing_handler import MissingHandler
 from handlers.remove_handler import RemoveHandler
 from handlers.rotation_handler import RotationHandler
@@ -60,6 +61,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             "/remove": RemoveHandler,
             "/missing": MissingHandler,
             "/rotation": RotationHandler,
+            "/compact": CompactHandler,
         }
         super().__init__(*args, **kwargs)  # Call parent constructor
 

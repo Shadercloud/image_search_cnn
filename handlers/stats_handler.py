@@ -6,4 +6,4 @@ class StatsHandler:
 
     def handle(self, query_params):
 
-        return self.request.json({"images": self.database.count()})
+        return self.request.json(self.database.status())

@@ -62,7 +62,23 @@ Edit `config.yml` and set `images.path` to the directory your images are stored 
 ## Database
 All image vectors are store in an SQLite database file in the data directory.
 
-FAISS index files are also stored in the data directory
+FAISS index files are also stored in the data directory:
+
+| File | What it is |
+|---|---|
+| `clip_faiss_index.gN.ivf` + `clip_faiss_index_mapping.gN.npy` | The **base** of generation N: the FAISS index and the image name for each vector position. Rewritten only by a compaction. Generation 0 is the original pair without `.gN` in the name. |
+| `clip_faiss_index_delta.gN.log` | Append-only **delta log** of every image added since base N was written (name + vector + checksum per record). |
+| `clip_faiss_index.current.json` | Names the live generation. Replacing it is the last step of a compaction. |
+
+On start the base is loaded and the delta log replayed on top of it. Saving (the periodic task and on shutdown) only fsyncs the delta log, a few KB per added image, instead of rewriting the whole index, so `webserver.periodic_task` can be short (e.g. 300 seconds).
+
+The delta log is only folded into a new base by a **compaction**, which rewrites the whole index file and is rate-limited by `faiss.save_max_mb_per_sec`. Run it deliberately at a quiet time, e.g. when the delta log holds a few hundred thousand records, and pause adds first: they wait until it finishes (searches keep working). The previous generation's base is kept as a fallback; older ones are deleted.
+
+```
+http://localhost:8080/compact?confirm=1
+```
+
+`/stats` shows `generation`, `delta` (records in the delta log) and `compacting`.
 
 ## Webserver
 
@@ -158,6 +174,11 @@ Get information about how many images are in the database.
 
 ```
 http://localhost:8080/stats
+```
+
+**Returns Example:**
+```json
+{"images": 9627204, "generation": 0, "delta": 1520, "compacting": false}
 ```
 
 # GPU
