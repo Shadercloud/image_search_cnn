@@ -83,12 +83,14 @@ class Database:
             self.mapping = np.load(self.mapping_path, allow_pickle=True)
 
             print(f"[INFO] Mapping loaded with {self.mapping.shape[0]} indexes")
-            self._load_names()
 
             print("[INFO] Loading FAISS index...")
             self.index = faiss.read_index(self.index_path)
             if hasattr(self.index, "nprobe"):
                 self.index.nprobe = self.nprobe
+
+            self._reconcile_index_and_mapping()
+            self._load_names()
 
             print("[INFO] Loading Database Completed")
         else:
@@ -209,12 +211,74 @@ class Database:
 
         return False
 
+    def _reconcile_index_and_mapping(self):
+        """
+        Index position N belongs to mapping[N], so the two must have the same length.
+        A save interrupted between writing the index and the mapping leaves them out of
+        step, and every later add() would then be filed under the wrong name. Trim
+        whichever is longer back to the shorter one. This happens in memory only and does
+        not mark the index as changed: the next ordinary save writes a consistent pair.
+        """
+        n_index, n_mapping = self.index.ntotal, self.mapping.shape[0]
+        if n_index == n_mapping:
+            return
+        print(f"[WARN] FAISS index has {n_index} vectors but mapping has {n_mapping} names - repairing")
+        if n_index > n_mapping:
+            # add() gives vectors sequential ids, so the extras are ids n_mapping..n_index-1
+            removed = self.index.remove_ids(faiss.IDSelectorRange(n_mapping, n_index))
+            print(f"[WARN] Dropped {removed} index vectors with no name; they are still in "
+                  f"the sqlite database and are re-added when their images are added again")
+        else:
+            self.mapping = self.mapping[:n_index]
+            print(f"[WARN] Dropped {n_mapping - n_index} mapping names with no vector")
+        if self.index.ntotal != self.mapping.shape[0]:
+            raise RuntimeError(f"Index/mapping repair failed: {self.index.ntotal} vs {self.mapping.shape[0]}")
+
+    def _write_index_throttled(self, path):
+        """
+        faiss.write_index, optionally limited to faiss.save_max_mb_per_sec (0 = unlimited).
+        A full save rewrites the whole index (~30G), which at full speed can saturate
+        slow SSD storage and stall everything else on the host.
+        """
+        max_mb_per_sec = config.get("faiss", "save_max_mb_per_sec", default=0) or 0
+        if not max_mb_per_sec:
+            faiss.write_index(self.index, path)
+            return
+
+        max_bytes_per_sec = max_mb_per_sec * 1024 * 1024
+        with open(path, "wb") as f:
+            started = time.monotonic()
+            written = 0
+
+            def write(chunk):
+                nonlocal written
+                f.write(chunk)
+                written += len(chunk)
+                ahead = written / max_bytes_per_sec - (time.monotonic() - started)
+                if ahead > 0:
+                    time.sleep(ahead)
+                return len(chunk)
+
+            faiss.write_index(self.index, faiss.PyCallbackIOWriter(write, 8 * 1024 * 1024))
+            f.flush()
+            os.fsync(f.fileno())
+
     def save(self):
         if self.index_changed:
             with self.lock:
                 print("[INFO] Saving FAISS index...")
-                faiss.write_index(self.index, self.index_path)
-                np.save(self.mapping_path, self.mapping)
+                # Write both files under temporary names and swap them in only once both
+                # are complete, so an interrupted save leaves the previous pair intact
+                # instead of a new index next to an old mapping.
+                index_tmp = self.index_path + ".tmp"
+                mapping_tmp = self.mapping_path + ".tmp"
+                self._write_index_throttled(index_tmp)
+                with open(mapping_tmp, "wb") as f:
+                    np.save(f, self.mapping)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(index_tmp, self.index_path)
+                os.replace(mapping_tmp, self.mapping_path)
                 self.index_changed = False
                 print("[INFO] Save Completed")
         else:
